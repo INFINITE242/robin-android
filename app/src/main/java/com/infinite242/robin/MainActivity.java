@@ -23,6 +23,9 @@ public class MainActivity extends Activity {
     private TextToSpeech tts;
     private boolean ttsReady = false;
 
+    private String languageCode = "en-IN";
+    private Locale selectedLocale = new Locale("en", "IN");
+
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -46,11 +49,18 @@ public class MainActivity extends Activity {
         title.setGravity(Gravity.CENTER);
 
         status = new TextView(this);
-        status.setText("Hello! Tap below and talk to me.");
+        status.setText("Choose a language, then tap LISTEN.");
         status.setTextSize(17);
         status.setTextColor(Color.LTGRAY);
         status.setGravity(Gravity.CENTER);
         status.setPadding(0, 24, 0, 24);
+
+        LinearLayout languages = new LinearLayout(this);
+        languages.setGravity(Gravity.CENTER);
+
+        addLanguageButton(languages, "English", "en-IN", new Locale("en", "IN"));
+        addLanguageButton(languages, "हिन्दी", "hi-IN", new Locale("hi", "IN"));
+        addLanguageButton(languages, "ಕನ್ನಡ", "kn-IN", new Locale("kn", "IN"));
 
         Button listen = new Button(this);
         listen.setText("🎤  LISTEN");
@@ -58,14 +68,16 @@ public class MainActivity extends Activity {
 
         layout.addView(face);
         layout.addView(title);
+        layout.addView(languages);
         layout.addView(status);
         layout.addView(listen);
         setContentView(layout);
 
         tts = new TextToSpeech(this, result -> {
             if (result == TextToSpeech.SUCCESS) {
-                tts.setLanguage(Locale.getDefault());
-                ttsReady = true;
+                int voiceResult = tts.setLanguage(selectedLocale);
+                ttsReady = voiceResult != TextToSpeech.LANG_MISSING_DATA
+                        && voiceResult != TextToSpeech.LANG_NOT_SUPPORTED;
             }
         });
 
@@ -75,37 +87,73 @@ public class MainActivity extends Activity {
                 new String[]{Manifest.permission.RECORD_AUDIO}, 10);
         }
 
-        if (SpeechRecognizer.isRecognitionAvailable(this)) {
-            recognizer = SpeechRecognizer.createSpeechRecognizer(this);
-            recognizer.setRecognitionListener(new RecognitionListener() {
-                public void onReadyForSpeech(Bundle params) {
-                    status.setText("I'm listening...");
-                }
-                public void onBeginningOfSpeech() {}
-                public void onRmsChanged(float rmsdB) {}
-                public void onBufferReceived(byte[] buffer) {}
-                public void onEndOfSpeech() {
-                    status.setText("Thinking...");
-                }
-                public void onError(int error) {
-                    status.setText("Couldn't hear that. Tap LISTEN to try again.");
-                }
-                public void onResults(Bundle results) {
-                    ArrayList<String> matches =
-                        results.getStringArrayList(
-                            SpeechRecognizer.RESULTS_RECOGNITION);
-                    if (matches != null && !matches.isEmpty()) {
-                        reply(matches.get(0));
-                    } else {
-                        status.setText("I didn't catch that. Please try again.");
-                    }
-                }
-                public void onPartialResults(Bundle partialResults) {}
-                public void onEvent(int eventType, Bundle params) {}
-            });
-        } else {
+        createRecognizer();
+    }
+
+    private void addLanguageButton(LinearLayout row, String label,
+                                   String code, Locale locale) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setOnClickListener(v -> {
+            languageCode = code;
+            selectedLocale = locale;
+
+            if (tts != null && ttsReady) {
+                int result = tts.setLanguage(selectedLocale);
+                ttsReady = result != TextToSpeech.LANG_MISSING_DATA
+                        && result != TextToSpeech.LANG_NOT_SUPPORTED;
+            }
+
+            status.setText("Language: " + label + ". Tap LISTEN.");
+        });
+        row.addView(button);
+    }
+
+    private void createRecognizer() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             status.setText("Speech recognition isn't available on this phone.");
+            return;
         }
+
+        recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+        recognizer.setRecognitionListener(new RecognitionListener() {
+            public void onReadyForSpeech(Bundle params) {
+                status.setText("I'm listening...");
+            }
+
+            public void onBeginningOfSpeech() {}
+            public void onRmsChanged(float rmsdB) {}
+            public void onBufferReceived(byte[] buffer) {}
+
+            public void onEndOfSpeech() {
+                status.setText("Processing speech...");
+            }
+
+            public void onError(int error) {
+                status.setText("Couldn't recognize speech. Check language support and try again.");
+            }
+
+            public void onResults(Bundle results) {
+                ArrayList<String> matches = results.getStringArrayList(
+                        SpeechRecognizer.RESULTS_RECOGNITION);
+
+                if (matches != null && !matches.isEmpty()) {
+                    String heard = matches.get(0);
+                    status.setText("You said:\n" + heard + "\n\nRobin: " + heard);
+
+                    if (ttsReady && tts != null) {
+                        tts.speak(heard, TextToSpeech.QUEUE_FLUSH, null, "robin_reply");
+                    } else {
+                        status.append("\n\nA voice for this language isn't available.");
+                    }
+                } else {
+                    status.setText("I didn't catch that. Please try again.");
+                }
+            }
+
+            public void onPartialResults(Bundle partialResults) {}
+            public void onEvent(int eventType, Bundle params) {}
+        });
     }
 
     private void startListening() {
@@ -115,24 +163,19 @@ public class MainActivity extends Activity {
                 new String[]{Manifest.permission.RECORD_AUDIO}, 10);
             return;
         }
+
         if (recognizer == null) {
-            status.setText("Speech recognition isn't available.");
-            return;
+            createRecognizer();
         }
+        if (recognizer == null) return;
+
         Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageCode);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, languageCode);
         intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "Talk to Robin");
         recognizer.startListening(intent);
-    }
-
-    private void reply(String heard) {
-        String response = "I heard you say: " + heard;
-        status.setText("You said:\n" + heard + "\n\n" + response);
-        if (ttsReady) {
-            tts.speak(response, TextToSpeech.QUEUE_FLUSH, null, "robin_reply");
-        }
     }
 
     @Override
