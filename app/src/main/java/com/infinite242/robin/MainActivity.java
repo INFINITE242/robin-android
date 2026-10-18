@@ -255,7 +255,7 @@ public class MainActivity extends Activity {
             try {
                 String endpoint =
                         "https://generativelanguage.googleapis.com/v1beta/models/"
-                        + "gemini-2.5-flash:generateContent?key=" + key;
+                        + "gemini-3.8-flash:generateContent?key=" + key;
 
                 URL url = new URL(endpoint);
                 connection = (HttpURLConnection) url.openConnection();
