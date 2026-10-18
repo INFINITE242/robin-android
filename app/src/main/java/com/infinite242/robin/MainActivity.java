@@ -317,6 +317,7 @@ public class MainActivity extends Activity {
                         .getJSONObject("content");
                 JSONArray replyParts = replyContent.getJSONArray("parts");
                 String answer = replyParts.getJSONObject(0).getString("text").trim();
+                sendToEsp32(answer);
 
                 runOnUiThread(() -> {
                     status.setText("You: " + heard + "\n\nRobin: " + answer);
@@ -339,6 +340,26 @@ public class MainActivity extends Activity {
                 if (connection != null) connection.disconnect();
             }
         });
+    }
+
+
+    private void sendToEsp32(String text) {
+        HttpURLConnection connection = null;
+        try {
+            String encoded = java.net.URLEncoder.encode(text, "UTF-8");
+            URL url = new URL(
+                    "http://10.235.154.226/reply?text=" + encoded);
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(3000);
+            connection.setReadTimeout(3000);
+            int code = connection.getResponseCode();
+            android.util.Log.d("Robin", "ESP32 reply status: " + code);
+        } catch (Exception e) {
+            android.util.Log.e("Robin", "Could not send reply to ESP32", e);
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
     }
 
     @Override
